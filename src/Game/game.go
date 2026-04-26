@@ -187,6 +187,80 @@ func (g *Game) playBeepForNode(currNode interface{}) {
 	g.beepPlayers[depth].Play()
 }
 
+// drawTelemetry calcula y dibuja las estadísticas matemáticas del árbol en tiempo real
+func (g *Game) drawTelemetry(screen *ebiten.Image) {
+	if g.Tree == nil || len(g.Nodes) == 0 {
+		return
+	}
+
+	totalNodes := len(g.Nodes)
+	totalEdges := len(g.Edges)
+	leafNodes := 0
+	nonLeafNodes := 0
+	maxDepth := 0
+
+	// 1. Cálculos Matemáticos en tiempo real
+	for _, n := range g.Tree.Nodes {
+		hijos := n.GetChildren()
+		if len(hijos) == 0 {
+			leafNodes++ // Si no tiene hijos, es una Hoja
+		} else {
+			nonLeafNodes++ // Si tiene hijos, es un nodo interno
+		}
+
+		// Calcular la profundidad de este nodo subiendo hasta la raíz
+		profundidad := 0
+		padre := n.GetParent()
+		for padre != nil {
+			profundidad++
+			padre = padre.GetParent()
+		}
+		if profundidad > maxDepth {
+			maxDepth = profundidad
+		}
+	}
+
+	// Factor de ramificación (¿Cuántos hijos tiene un nodo en promedio?)
+	avgBranching := 0.0
+	if nonLeafNodes > 0 {
+		avgBranching = float64(totalEdges) / float64(nonLeafNodes)
+	}
+
+	// 2. Medidas y Posición del Panel (Esquina Inferior Derecha)
+	panelW, panelH := float32(260), float32(130)
+	panelX := float32(g.ScreenWidth) - panelW - 20
+	panelY := float32(g.ScreenHeight) - panelH - 20
+
+	// 3. Dibujar el Panel Translúcido
+	// Fondo principal
+	vector.DrawFilledRect(screen, panelX, panelY, panelW, panelH, color.RGBA{18, 18, 24, 220}, true)
+	// Cabecera decorativa
+	vector.DrawFilledRect(screen, panelX, panelY, panelW, 25, color.RGBA{45, 45, 58, 255}, true)
+
+	// 4. Imprimir la información
+	xText := int(panelX) + 15
+	yText := int(panelY) + 17
+
+	// Título
+	text.Draw(screen, "INFO DEL GRAFO", basicfont.Face7x13, xText, yText, color.RGBA{78, 205, 196, 255})
+
+	// Datos
+	yText += 25
+	text.Draw(screen, fmt.Sprintf("Total Nodos: %d", totalNodes), basicfont.Face7x13, xText, yText, color.White)
+
+	yText += 20
+	text.Draw(screen, fmt.Sprintf("Total Aristas: %d", totalEdges), basicfont.Face7x13, xText, yText, color.White)
+
+	yText += 20
+	text.Draw(screen, fmt.Sprintf("Nodos Hoja: %d", leafNodes), basicfont.Face7x13, xText, yText, color.RGBA{255, 107, 107, 255})
+
+	yText += 20
+	text.Draw(screen, fmt.Sprintf("Distancia max hasta la raiz: %d", maxDepth), basicfont.Face7x13, xText, yText, color.RGBA{149, 117, 205, 255})
+
+	yText += 20
+	text.Draw(screen, fmt.Sprintf("Factor Ramificacion: %.2f", avgBranching), basicfont.Face7x13, xText, yText, color.White)
+}
+
 func (g *Game) Update() error {
 	g.handleMouse()
 	// Selector de velocidad (Funciona en ambos modos)
@@ -328,7 +402,7 @@ func (g *Game) handlePlaybackMode() {
 	}
 }
 
-/*
+/* OLD Physics engine do not uncomment
 func (g *Game) updatePhysics() {
 	const repulsion, springLen, springK, gravity, friction, maxSpeed = 4000.0, 100.0, 0.06, 0.015, 0.82, 20.0
 	for id1, n1 := range g.Nodes {
@@ -624,6 +698,7 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 	// Indicador de Velocidad (Fijo esquina superior derecha)
 	text.Draw(screen, fmt.Sprintf("VELOCIDAD: %d%%", speedPercent), basicfont.Face7x13, g.ScreenWidth-150, 25, color.RGBA{78, 205, 196, 255})
 	text.Draw(screen, "Teclas [ARRIBA / ABAJO]", basicfont.Face7x13, g.ScreenWidth-185, 45, color.RGBA{84, 110, 122, 255})
+	g.drawTelemetry(screen)
 }
 
 func (g *Game) Layout(w, h int) (int, int) { return g.ScreenWidth, g.ScreenHeight }

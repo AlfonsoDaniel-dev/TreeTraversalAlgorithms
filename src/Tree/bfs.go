@@ -55,8 +55,6 @@ func (t *Tree) TraversalBfsSteps(startNodeId int) ([]TraversalStep, error) {
 	var pathSoFar []int
 
 	for len(queue) > 0 {
-		// ... dentro de tu for len(queue) > 0 ...
-
 		actual := queue[0]
 		queue = queue[1:]
 
@@ -96,6 +94,7 @@ func (t *Tree) TraversalBfsSteps(startNodeId int) ([]TraversalStep, error) {
 			Visited:     visitedSnapshot,
 			queue:       queueSnapshot,
 			Unvisited:   undiscovered,
+			PathTaken:   pathSoFarSnapShot,
 		}
 
 		history = append(history, TraversalStep{
