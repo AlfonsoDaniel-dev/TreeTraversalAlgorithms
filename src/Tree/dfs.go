@@ -11,12 +11,16 @@ type DfsState struct {
 	Visited     []*Node.Node
 	stack       []*Node.Node
 	Unvisited   []*Node.Node
+	PathTaken   []int
 }
 
 func (s DfsState) GetCurrent() *Node.Node    { return s.CurrentNode }
 func (s DfsState) GetVisited() []*Node.Node  { return s.Visited }
 func (s DfsState) GetFrontier() []*Node.Node { return s.stack }
 func (s DfsState) GetUnseen() []*Node.Node   { return s.Unvisited }
+func (s DfsState) GetPathTaken() []int {
+	return s.PathTaken
+}
 
 func (t *Tree) TraversalDfsSteps(startNodeId int) ([]TraversalStep, error) {
 	// 1. Buscamos el nodo de inicio
@@ -36,11 +40,15 @@ func (t *Tree) TraversalDfsSteps(startNodeId int) ([]TraversalStep, error) {
 	var visited []*Node.Node
 	stepId := 0
 
+	var pathSoFar []int
+
 	for len(stack) > 0 {
 
 		n := len(stack) - 1
 		actual := stack[n]
 		stack = stack[:n]
+
+		pathSoFar = append(pathSoFar, actual.Id)
 
 		// 1. Explorar hacia ARRIBA (Apilamos al padre) <-- LA NUEVA MAGIA
 		padre := actual.GetParent()
@@ -66,6 +74,9 @@ func (t *Tree) TraversalDfsSteps(startNodeId int) ([]TraversalStep, error) {
 			}
 		}
 
+		pathSoFarSnapShot := make([]int, len(pathSoFar))
+		copy(pathSoFarSnapShot, pathSoFar)
+
 		stackSnapshot := make([]*Node.Node, len(stack))
 		copy(stackSnapshot, stack)
 
@@ -77,6 +88,7 @@ func (t *Tree) TraversalDfsSteps(startNodeId int) ([]TraversalStep, error) {
 			Visited:     visitedSnapshot,
 			stack:       stackSnapshot,
 			Unvisited:   undiscoverd,
+			PathTaken:   pathSoFarSnapShot,
 		}
 
 		history = append(history, TraversalStep{

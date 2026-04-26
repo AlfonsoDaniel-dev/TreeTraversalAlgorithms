@@ -7,4 +7,5 @@ type TraversalState interface {
 	GetVisited() []*Node.Node
 	GetFrontier() []*Node.Node
 	GetUnseen() []*Node.Node
+	GetPathTaken() []int
 }

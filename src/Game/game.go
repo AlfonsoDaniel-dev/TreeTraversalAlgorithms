@@ -2,11 +2,13 @@ package Game
 
 import (
 	"fmt"
-	"github.com/hajimehoshi/ebiten/v2/audio"
 	"image/color"
 	"math"
 	"math/rand"
 	"strconv"
+
+	"github.com/AlfonsoDaniel-dev/TreeTraversal/src/Node"
+	"github.com/hajimehoshi/ebiten/v2/audio"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -28,26 +30,18 @@ func init() {
 }
 
 // generaBlip crea una onda de sonido corta (50 milisegundos) a 880Hz (Nota La/A5)
-func generaBlip() []byte {
-	const freq = 880.0
-	const duration = 0.05 // 50 milisegundos de duración
+func generaBlip(freq float64) []byte {
+	const duration = 0.05 // 50 milisegundos
 	length := int(sampleRate * duration)
 
-	// Ebitengine espera audio Estéreo (2 canales) de 16-bits (2 bytes).
-	// Total: 4 bytes por muestra.
 	b := make([]byte, length*4)
 
 	for i := 0; i < length; i++ {
-		// Fórmula mágica de la onda sinusoidal
 		volumen := math.Sin(2 * math.Pi * freq * float64(i) / sampleRate)
+		v16 := int16(volumen * (math.MaxInt16 / 6)) // /6 para un volumen agradable
 
-		// Convertir volumen (de -1 a 1) a 16 bits
-		v16 := int16(volumen * (math.MaxInt16 / 4)) // "/4" para que no suene tan fuerte
-
-		// Canal Izquierdo
 		b[4*i] = byte(v16)
 		b[4*i+1] = byte(v16 >> 8)
-		// Canal Derecho
 		b[4*i+2] = byte(v16)
 		b[4*i+3] = byte(v16 >> 8)
 	}
@@ -94,7 +88,7 @@ type Game struct {
 	tickCounter    int
 
 	draggedNode *VisualNode
-	beepPlayer  *audio.Player
+	beepPlayers map[int]*audio.Player
 }
 
 func NewGame(bgColor color.Color, width, height int, initialTree *Tree.Tree) *Game {
@@ -111,7 +105,7 @@ func NewGame(bgColor color.Color, width, height int, initialTree *Tree.Tree) *Ga
 	}
 
 	// Cargamos el sonido al reproductor en la memoria de la tarjeta de sonido
-	g.beepPlayer = audioCtx.NewPlayerFromBytes(generaBlip())
+	g.beepPlayers = make(map[int]*audio.Player)
 
 	g.syncVisuals()
 	return g
@@ -161,6 +155,36 @@ func (g *Game) syncVisuals() {
 			}
 		}
 	}
+}
+
+// playBeepForNode calcula la profundidad y toca una nota musical
+func (g *Game) playBeepForNode(currNode interface{}) {
+	// 1. Convertimos la interfaz al tipo correcto (Node.Node de tu Tree)
+	// Ajusta "Tree.Node" si tu struct se llama diferente (ej: *Tree.Node)
+	node, ok := currNode.(*Node.Node)
+	if !ok || node == nil {
+		return
+	}
+
+	// 2. Calcular la profundidad (viajando hacia el padre)
+	depth := 0
+	padre := node.GetParent()
+	for padre != nil {
+		depth++
+		padre = padre.GetParent()
+	}
+
+	// 3. Generar el sonido solo si no existe en caché
+	if _, exists := g.beepPlayers[depth]; !exists {
+		// FÓRMULA MUSICAL: Escala de Tonos Enteros (Whole Tone Scale)
+		// Base: 440Hz (Nota La/A4). Sube un tono completo por cada nivel.
+		freq := 440.0 * math.Pow(2.0, float64(depth*2)/12.0)
+		g.beepPlayers[depth] = audioCtx.NewPlayerFromBytes(generaBlip(freq))
+	}
+
+	// 4. Disparar el sonido
+	g.beepPlayers[depth].Rewind()
+	g.beepPlayers[depth].Play()
 }
 
 func (g *Game) Update() error {
@@ -273,14 +297,16 @@ func (g *Game) handlePlaybackMode() {
 	// Paso Manual -> Adelante
 	if inpututil.IsKeyJustPressed(ebiten.KeyRight) && g.CurrentStep < len(g.TraversalSteps)-1 {
 		g.CurrentStep++
-		g.beepPlayer.Rewind()
-		g.beepPlayer.Play()
+		// Extraemos el nodo actual del estado y lo sonificamos
+		currNode := g.TraversalSteps[g.CurrentStep].State.GetCurrent()
+		g.playBeepForNode(currNode)
 	}
+
 	// Paso Manual -> Atrás
 	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) && g.CurrentStep > 0 {
 		g.CurrentStep--
-		g.beepPlayer.Rewind()
-		g.beepPlayer.Play()
+		currNode := g.TraversalSteps[g.CurrentStep].State.GetCurrent()
+		g.playBeepForNode(currNode)
 	}
 
 	// Avance Automático (Play)
@@ -291,12 +317,12 @@ func (g *Game) handlePlaybackMode() {
 			if g.CurrentStep < len(g.TraversalSteps)-1 {
 				g.CurrentStep++
 
-				// ¡PÍP! Suena el avance automático
-				g.beepPlayer.Rewind()
-				g.beepPlayer.Play()
+				// ¡Sonido Dinámico!
+				currNode := g.TraversalSteps[g.CurrentStep].State.GetCurrent()
+				g.playBeepForNode(currNode)
 
 			} else {
-				g.IsPlaying = false // Se apaga al llegar al final
+				g.IsPlaying = false
 			}
 		}
 	}
@@ -579,6 +605,19 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 			}
 			strEstructura += "]"
 			text.Draw(screen, strEstructura, basicfont.Face7x13, 20, g.ScreenHeight-20, color.White)
+
+			// 4. MOSTRAR RUTA COMPLETA (Historial de pasos)
+			text.Draw(screen, "RUTA RECORRIDA:", basicfont.Face7x13, 20, g.ScreenHeight-100, color.RGBA{149, 117, 205, 255})
+
+			rutaStr := ""
+			for i, nodeID := range state.GetPathTaken() {
+				rutaStr += strconv.Itoa(nodeID)
+				if i < len(state.GetPathTaken())-1 {
+					rutaStr += " -> "
+				}
+			}
+
+			text.Draw(screen, rutaStr, basicfont.Face7x13, 20, g.ScreenHeight-80, color.White)
 		}
 	}
 

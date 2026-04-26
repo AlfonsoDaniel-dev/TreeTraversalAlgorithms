@@ -11,6 +11,7 @@ type BfsState struct {
 	Visited     []*Node.Node
 	queue       []*Node.Node
 	Unvisited   []*Node.Node
+	PathTaken   []int
 }
 
 func (s BfsState) GetCurrent() *Node.Node {
@@ -27,6 +28,10 @@ func (s BfsState) GetFrontier() []*Node.Node {
 
 func (s BfsState) GetUnseen() []*Node.Node {
 	return s.Unvisited
+}
+
+func (s BfsState) GetPathTaken() []int {
+	return s.PathTaken
 }
 
 func (t *Tree) TraversalBfsSteps(startNodeId int) ([]TraversalStep, error) {
@@ -47,11 +52,15 @@ func (t *Tree) TraversalBfsSteps(startNodeId int) ([]TraversalStep, error) {
 	var visited []*Node.Node
 	stepId := 0
 
+	var pathSoFar []int
+
 	for len(queue) > 0 {
 		// ... dentro de tu for len(queue) > 0 ...
 
 		actual := queue[0]
 		queue = queue[1:]
+
+		pathSoFar = append(pathSoFar, actual.Id)
 
 		for _, child := range actual.GetChildren() {
 			if !discovered[child.Id] {
@@ -72,6 +81,9 @@ func (t *Tree) TraversalBfsSteps(startNodeId int) ([]TraversalStep, error) {
 				undiscovered = append(undiscovered, node)
 			}
 		}
+
+		pathSoFarSnapShot := make([]int, len(pathSoFar))
+		copy(pathSoFarSnapShot, pathSoFar)
 
 		queueSnapshot := make([]*Node.Node, len(queue))
 		copy(queueSnapshot, queue)
