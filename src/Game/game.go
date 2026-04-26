@@ -2,6 +2,7 @@ package Game
 
 import (
 	"fmt"
+	"github.com/hajimehoshi/ebiten/v2/audio"
 	"image/color"
 	"math"
 	"math/rand"
@@ -16,6 +17,42 @@ import (
 	// Ajusta esta ruta a tu módulo
 	"github.com/AlfonsoDaniel-dev/TreeTraversal/src/Tree"
 )
+
+const sampleRate = 44100
+
+var audioCtx *audio.Context
+
+func init() {
+	// Inicializa el hardware de sonido de la computadora a 44.1 kHz
+	audioCtx = audio.NewContext(sampleRate)
+}
+
+// generaBlip crea una onda de sonido corta (50 milisegundos) a 880Hz (Nota La/A5)
+func generaBlip() []byte {
+	const freq = 880.0
+	const duration = 0.05 // 50 milisegundos de duración
+	length := int(sampleRate * duration)
+
+	// Ebitengine espera audio Estéreo (2 canales) de 16-bits (2 bytes).
+	// Total: 4 bytes por muestra.
+	b := make([]byte, length*4)
+
+	for i := 0; i < length; i++ {
+		// Fórmula mágica de la onda sinusoidal
+		volumen := math.Sin(2 * math.Pi * freq * float64(i) / sampleRate)
+
+		// Convertir volumen (de -1 a 1) a 16 bits
+		v16 := int16(volumen * (math.MaxInt16 / 4)) // "/4" para que no suene tan fuerte
+
+		// Canal Izquierdo
+		b[4*i] = byte(v16)
+		b[4*i+1] = byte(v16 >> 8)
+		// Canal Derecho
+		b[4*i+2] = byte(v16)
+		b[4*i+3] = byte(v16 >> 8)
+	}
+	return b
+}
 
 const (
 	ModeEdit = iota
@@ -57,6 +94,7 @@ type Game struct {
 	tickCounter    int
 
 	draggedNode *VisualNode
+	beepPlayer  *audio.Player
 }
 
 func NewGame(bgColor color.Color, width, height int, initialTree *Tree.Tree) *Game {
@@ -69,8 +107,12 @@ func NewGame(bgColor color.Color, width, height int, initialTree *Tree.Tree) *Ga
 		Edges:          make([]*VisualEdge, 0),
 		Mode:           ModeEdit,
 		SelectedNodeID: 0,
-		TicksPerFrame:  30, // Velocidad inicial (0.5s por paso)
+		TicksPerFrame:  30,
 	}
+
+	// Cargamos el sonido al reproductor en la memoria de la tarjeta de sonido
+	g.beepPlayer = audioCtx.NewPlayerFromBytes(generaBlip())
+
 	g.syncVisuals()
 	return g
 }
@@ -92,6 +134,13 @@ func (g *Game) syncVisuals() {
 	if g.Tree == nil {
 		return
 	}
+
+	for id := range g.Nodes {
+		if _, exists := g.Tree.Nodes[id]; !exists {
+			delete(g.Nodes, id)
+		}
+	}
+
 	for id := range g.Tree.Nodes {
 		if _, exists := g.Nodes[id]; !exists {
 			g.Nodes[id] = &VisualNode{
@@ -204,6 +253,13 @@ func (g *Game) handleEditMode() {
 			fmt.Println("Error DFS:", err)
 		}
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyX) || inpututil.IsKeyJustPressed(ebiten.KeyBackspace) {
+		if g.SelectedNodeID != 0 {
+			g.Tree.RemoveNode(g.SelectedNodeID)
+			g.SelectedNodeID = 0 // Regresamos la selección a la raíz por seguridad
+			g.syncVisuals()
+		}
+	}
 }
 
 func (g *Game) handlePlaybackMode() {
@@ -213,26 +269,40 @@ func (g *Game) handlePlaybackMode() {
 	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		g.IsPlaying = !g.IsPlaying
 	}
+
+	// Paso Manual -> Adelante
 	if inpututil.IsKeyJustPressed(ebiten.KeyRight) && g.CurrentStep < len(g.TraversalSteps)-1 {
 		g.CurrentStep++
+		g.beepPlayer.Rewind()
+		g.beepPlayer.Play()
 	}
+	// Paso Manual -> Atrás
 	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) && g.CurrentStep > 0 {
 		g.CurrentStep--
+		g.beepPlayer.Rewind()
+		g.beepPlayer.Play()
 	}
 
+	// Avance Automático (Play)
 	if g.IsPlaying && len(g.TraversalSteps) > 0 {
 		g.tickCounter++
 		if g.tickCounter >= g.TicksPerFrame {
 			g.tickCounter = 0
 			if g.CurrentStep < len(g.TraversalSteps)-1 {
 				g.CurrentStep++
+
+				// ¡PÍP! Suena el avance automático
+				g.beepPlayer.Rewind()
+				g.beepPlayer.Play()
+
 			} else {
-				g.IsPlaying = false
+				g.IsPlaying = false // Se apaga al llegar al final
 			}
 		}
 	}
 }
 
+/*
 func (g *Game) updatePhysics() {
 	const repulsion, springLen, springK, gravity, friction, maxSpeed = 4000.0, 100.0, 0.06, 0.015, 0.82, 20.0
 	for id1, n1 := range g.Nodes {
@@ -281,6 +351,117 @@ func (g *Game) updatePhysics() {
 			n.VY = -maxSpeed
 		}
 		n.X, n.Y = n.X+n.VX, n.Y+n.VY
+	}
+} */
+
+func (g *Game) updatePhysics() {
+	// Constantes calibradas para el árbol colgante
+	const repulsion = 4000.0
+	const springLen = 80.0 // Resortes más cortos para jerarquía
+	const springK = 0.15   // Mayor tensión para cargar el peso
+	const gravityY = 0.8   // Gravedad de cascada (+Y hacia abajo)
+	const friction = 0.80
+	const maxSpeed = 25.0
+
+	cx := float64(g.ScreenWidth / 2)
+
+	// 1. Repulsión Asimétrica
+	for id1, n1 := range g.Nodes {
+		for id2, n2 := range g.Nodes {
+			if id1 == id2 {
+				continue
+			}
+
+			dx, dy := n2.X-n1.X, n2.Y-n1.Y
+			if math.Abs(dx) > 350 || math.Abs(dy) > 350 {
+				continue
+			}
+
+			if math.Abs(dx) < 0.1 && math.Abs(dy) < 0.1 {
+				dx, dy = rand.Float64()*2-1, rand.Float64()*2-1
+			}
+			distSq := dx*dx + dy*dy
+			if distSq < 10.0 {
+				distSq = 10.0
+			}
+			f := repulsion / distSq
+			dist := math.Sqrt(distSq)
+
+			// Repulsión Fuerte en X (Abre el árbol) y Débil en Y (Mantiene niveles)
+			n1.VX -= (dx / dist) * f * 1.5
+			n1.VY -= (dy / dist) * f * 0.2
+		}
+	}
+
+	// 2. Atracción de Resortes
+	for _, edge := range g.Edges {
+		dx, dy := edge.To.X-edge.From.X, edge.To.Y-edge.From.Y
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist > 1 {
+			f := (dist - springLen) * springK
+			edge.From.VX += (dx / dist) * f
+			edge.From.VY += (dy / dist) * f
+			edge.To.VX -= (dx / dist) * f
+			edge.To.VY -= (dy / dist) * f
+		}
+	}
+
+	// 3. Gravedad y Anclaje
+	padding := float64(30.0)
+	for _, n := range g.Nodes {
+		if n == g.draggedNode {
+			continue
+		}
+
+		// EL CLAVO: Anclaje estricto de la raíz (Nodo 0)
+		if n.ID == 0 {
+			n.X += (cx - n.X) * 0.1
+			n.Y += (100.0 - n.Y) * 0.1
+			n.VX *= 0.5
+			n.VY *= 0.5
+		} else {
+			// Gravedad direccional y atracción leve al centro horizontal
+			n.VY += gravityY
+			n.VX += (cx - n.X) * 0.005
+		}
+
+		n.VX *= friction
+		n.VY *= friction
+
+		if n.VX > maxSpeed {
+			n.VX = maxSpeed
+		} else if n.VX < -maxSpeed {
+			n.VX = -maxSpeed
+		}
+		if n.VY > maxSpeed {
+			n.VY = maxSpeed
+		} else if n.VY < -maxSpeed {
+			n.VY = -maxSpeed
+		}
+
+		n.X += n.VX
+		n.Y += n.VY
+
+		if math.IsNaN(n.X) || math.IsNaN(n.Y) {
+			n.X, n.Y, n.VX, n.VY = cx, 150, 0, 0
+		}
+
+		if n.X < padding {
+			n.X = padding
+			n.VX *= -0.5
+		}
+		if n.X > float64(g.ScreenWidth)-padding {
+			n.X = float64(g.ScreenWidth) - padding
+			n.VX *= -0.5
+		}
+		if n.Y < padding {
+			n.Y = padding
+			n.VY *= -0.5
+		}
+		if n.Y > float64(g.ScreenHeight)-padding {
+			n.Y = float64(g.ScreenHeight) - padding
+			n.VY *= -0.5
+		}
 	}
 }
 
@@ -344,7 +525,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 
 func (g *Game) drawUI(screen *ebiten.Image) {
-	// Panel Superior (Hicimos el panel más alto: 70px)
+	// Panel Superior Transparente
 	vector.DrawFilledRect(screen, 0, 0, float32(g.ScreenWidth), 70, color.RGBA{18, 18, 24, 220}, true)
 
 	// Barra de velocidad (UI Visual)
@@ -359,12 +540,13 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 		}
 		text.Draw(screen, titulo, basicfont.Face7x13, 20, 25, color.RGBA{78, 205, 196, 255})
 
-		// Línea de edición
-		text.Draw(screen, fmt.Sprintf("Seleccionado: %d  |  [C] Agregar Hijo  |  [N] Nuevo Arbol  |  [1-5] Catalogo", g.SelectedNodeID), basicfont.Face7x13, 20, 45, color.White)
+		// Instrucciones actualizadas con [X] Borrar
+		text.Draw(screen, fmt.Sprintf("Sel: %d | [C] Hijo | [X] Borrar | [N] Limpiar | [1-5] Catalogo", g.SelectedNodeID), basicfont.Face7x13, 20, 45, color.White)
 
-		// Línea de algoritmos (Separada a la derecha)
-		text.Draw(screen, "LANZAR DESDE NODO SELECCIONADO:", basicfont.Face7x13, 650, 25, color.RGBA{84, 110, 122, 255})
-		text.Draw(screen, "[B] Ver BFS   |   [D] Ver DFS", basicfont.Face7x13, 650, 45, color.RGBA{255, 107, 107, 255})
+		// Menú de Algoritmos (Dinámico a la derecha)
+		menuDerechaX := g.ScreenWidth - 600
+		text.Draw(screen, "LANZAR DESDE NODO SELECCIONADO:", basicfont.Face7x13, menuDerechaX, 25, color.RGBA{84, 110, 122, 255})
+		text.Draw(screen, "[B] Ver BFS   |   [D] Ver DFS", basicfont.Face7x13, menuDerechaX, 45, color.RGBA{255, 107, 107, 255})
 
 	} else if g.Mode == ModePlayback {
 		text.Draw(screen, "=== MODO REPRODUCCION ===", basicfont.Face7x13, 20, 25, color.RGBA{149, 117, 205, 255})
@@ -373,10 +555,34 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 			status = "Corriendo"
 		}
 		text.Draw(screen, fmt.Sprintf("Paso: %d/%d (%s)", g.CurrentStep, len(g.TraversalSteps)-1, status), basicfont.Face7x13, 20, 45, color.White)
-		text.Draw(screen, "[Espacio] Play/Pausa  |  [<-] [->] Paso manual  |  [ESC] Salir a Edicion", basicfont.Face7x13, 400, 45, color.RGBA{255, 200, 0, 255})
+		text.Draw(screen, "[Espacio] Play/Pausa | [<-] [->] Manual | [ESC] Salir a Edicion", basicfont.Face7x13, 350, 45, color.RGBA{255, 200, 0, 255})
+
+		//VISUALIZADOR DE MEMORIA (Esquina inferior izquierda) ---
+		if len(g.TraversalSteps) > 0 && g.CurrentStep < len(g.TraversalSteps) {
+			state := g.TraversalSteps[g.CurrentStep].State
+			currNode := state.GetCurrent()
+
+			// 1. Mostrar Rastro de Movimiento
+			if currNode != nil {
+				textoMov := fmt.Sprintf("MOVIMIENTO: Nodo %d (Punto de Inicio)", currNode.Id)
+				if currNode.Parent != nil {
+					textoMov = fmt.Sprintf("MOVIMIENTO: De %d  ->  A %d", currNode.Parent.Id, currNode.Id)
+				}
+				text.Draw(screen, textoMov, basicfont.Face7x13, 20, g.ScreenHeight-60, color.RGBA{255, 107, 107, 255})
+			}
+
+			// 2. Mostrar Estructura (Frontera)
+			text.Draw(screen, "Queue/Pila", basicfont.Face7x13, 20, g.ScreenHeight-40, color.RGBA{78, 205, 196, 255})
+			strEstructura := "[ "
+			for _, fNode := range state.GetFrontier() {
+				strEstructura += strconv.Itoa(fNode.Id) + " "
+			}
+			strEstructura += "]"
+			text.Draw(screen, strEstructura, basicfont.Face7x13, 20, g.ScreenHeight-20, color.White)
+		}
 	}
 
-	// Indicador de Velocidad (Esquina superior derecha)
+	// Indicador de Velocidad (Fijo esquina superior derecha)
 	text.Draw(screen, fmt.Sprintf("VELOCIDAD: %d%%", speedPercent), basicfont.Face7x13, g.ScreenWidth-150, 25, color.RGBA{78, 205, 196, 255})
 	text.Draw(screen, "Teclas [ARRIBA / ABAJO]", basicfont.Face7x13, g.ScreenWidth-185, 45, color.RGBA{84, 110, 122, 255})
 }

@@ -65,3 +65,32 @@ func (t *Tree) AddNode(NodeId int) error {
 
 	return nil
 }
+
+func (t *Tree) RemoveNode(id int) error {
+	if id == 0 {
+		return errors.New("no puedes eliminar la raiz (id 0)")
+	}
+
+	node, exists := t.Nodes[id]
+	if !exists {
+		return fmt.Errorf("nodo con id %d no encontrado", id)
+	}
+
+	// 1. Desvincularlo del Padre (para que ya no exista en la jerarquía)
+	if node.Parent != nil {
+		node.Parent.PopChildren(id)
+	}
+
+	// 2. Función recursiva para borrar el nodo y toda su descendencia del mapa maestro
+	var removeRecursive func(n *Node.Node)
+	removeRecursive = func(n *Node.Node) {
+		for _, child := range n.GetChildren() {
+			removeRecursive(child)
+		}
+		// Lo eliminamos del diccionario
+		delete(t.Nodes, n.Id)
+	}
+
+	removeRecursive(node)
+	return nil
+}
