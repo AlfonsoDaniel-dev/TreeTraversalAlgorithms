@@ -7,13 +7,6 @@ import (
 	"github.com/AlfonsoDaniel-dev/TreeTraversal/src/Node"
 )
 
-type TraversalStep struct {
-	Id          int
-	CurrentNode *Node.Node
-	Visited     []*Node.Node
-	Unvisited   []*Node.Node
-}
-
 type Tree struct {
 	LastNodeId int
 	Root       *Node.Node
@@ -47,6 +40,8 @@ func (t *Tree) AddNodeFromRoot() error {
 
 	t.Root.AddChild(node)
 
+	t.Nodes[nodeId] = node
+
 	t.LastNodeId++
 
 	return nil
@@ -69,52 +64,4 @@ func (t *Tree) AddNode(NodeId int) error {
 	t.LastNodeId++
 
 	return nil
-}
-
-func (t *Tree) TraversalBfsSteps() ([]TraversalStep, error) {
-	if t.Root == nil {
-		return nil, errors.New("root is nil")
-	}
-
-	var history []TraversalStep
-
-	queue := []*Node.Node{t.Root}
-	var visited []*Node.Node
-
-	stepId := 0
-
-	for len(queue) > 0 {
-
-		actual := queue[0]
-
-		queueSnapshot := make([]*Node.Node, len(queue))
-		copy(queueSnapshot, queue)
-
-		visitedSnapshot := make([]*Node.Node, len(visited))
-		copy(visitedSnapshot, visited)
-
-		step := TraversalStep{
-			Id:          stepId,
-			CurrentNode: actual,
-			Visited:     visitedSnapshot,
-			Unvisited:   queueSnapshot,
-		}
-
-		history = append(history, step)
-
-		queue = queue[1:]
-		visited = append(visited, actual)
-
-		for _, children := range actual.GetChildren() {
-			queue = append(queue, children)
-		}
-
-		stepId++
-	}
-
-	return history, nil
-}
-
-func (t *Tree) TraversalDfsSteps() ([]TraversalStep, error) {
-	
 }

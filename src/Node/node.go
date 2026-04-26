@@ -4,6 +4,14 @@ type Node struct {
 	Id       int
 	Parent   *Node
 	children []*Node
+	// Physics properties
+	PositionX float64
+	PositionY float64
+	VelocityX float64
+	VelocityY float64
+	ForceX    float64
+	ForceY    float64
+	Mass      float64
 }
 
 func (n *Node) GetChildren() []*Node {
@@ -38,8 +46,15 @@ func (n *Node) PopChildren(id int) {
 
 func NewNode(id int, parent *Node) *Node {
 	return &Node{
-		Id:       id,
-		Parent:   parent,
-		children: make([]*Node, 0),
+		Id:        id,
+		Parent:    parent,
+		children:  make([]*Node, 0),
+		PositionX: 0,
+		PositionY: 0,
+		VelocityX: 0,
+		VelocityY: 0,
+		ForceX:    0,
+		ForceY:    0,
+		Mass:      1.0,
 	}
 }
