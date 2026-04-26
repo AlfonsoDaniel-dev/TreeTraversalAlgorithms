@@ -14,7 +14,7 @@ This project combines educational value with professional engineering, demonstra
 
 ## 🎯 Quick Start
 
-### Build
+### Build & Run
 ```bash
 cd /home/alfonso/Documents/uni/metodosNumericos/TreeTraversal
 go build -o tree-viz ./cmd
@@ -26,19 +26,20 @@ go build -o tree-viz ./cmd
 **Edit Mode** (Default):
 - **Mouse Click + Drag**: Move nodes around
 - **C**: Add child to selected node
-- **1-5**: Load different pre-configured trees
-- **B**: Start BFS visualization
-- **D**: Start DFS visualization
+- **1-5**: Load different pre-configured trees (Random 150 node, Deep 50 level)
+- **B**: Start BFS visualization (starting from selected node)
+- **D**: Start DFS visualization (starting from selected node)
 
 **Playback Mode** (During algorithm visualization):
-- **Space**: Play/Pause traversal
-- **→ Arrow**: Next step
-- **← Arrow**: Previous step  
+- **Space**: Play/Pause traversal animation
+- **→ Arrow**: Next step (manual advance)
+- **← Arrow**: Previous step (rewind)  
 - **ESC**: Exit playback, return to edit mode
 
 **Global** (Both modes):
-- **↑ Arrow**: Speed up animation
-- **↓ Arrow**: Slow down animation
+- **↑ Arrow**: Speed up animation (less wait between steps)
+- **↓ Arrow**: Slow down animation (more wait between steps)
+- **Mouse Drag**: Always available to reposition nodes
 
 ### Build & Run
 
@@ -104,9 +105,42 @@ Four interacting physical forces create an organic tree layout:
 - **Real-time 60 FPS**: Smooth animation
 
 ### Algorithm Support
-- **BFS (Breadth-First Search)**: With state recording
-- **DFS (Depth-First Search)**: With state recording
-- **Recorder Pattern**: Timestep-by-timestep playback
+
+#### BFS (Breadth-First Search) - `src/Tree/bfs.go` (111 lines)
+- Explores tree level by level
+- Uses queue data structure (FIFO)
+- Explores both children and parent nodes
+- Records complete state at each step:
+  - Current node being processed
+  - Visited nodes list
+  - Frontier queue snapshot
+  - Unvisited/undiscovered nodes
+  - Path taken (sequence of nodes)
+- Signature: `TraversalBfsSteps(startNodeId int) ([]TraversalStep, error)`
+
+#### DFS (Depth-First Search) - `src/Tree/dfs.go` (105 lines)
+- Explores one branch deeply before backtracking
+- Uses stack data structure (LIFO)
+- Explores parents before children (bidirectional)
+- Records complete state at each step:
+  - Current node being processed
+  - Visited nodes list
+  - Stack snapshot (frontier)
+  - Unvisited/undiscovered nodes
+  - Path taken (sequence of nodes)
+- Signature: `TraversalDfsSteps(startNodeId int) ([]TraversalStep, error)`
+
+#### Recorder Pattern - `src/Tree/TraversalStep.go` & `TraversalState.go`
+- Each algorithm records `TraversalStep` structs containing:
+  - Step ID (temporal sequence)
+  - TraversalState interface snapshot
+- TraversalState interface provides access to:
+  - Current node
+  - Visited nodes
+  - Frontier (queue/stack)
+  - Unseen nodes
+  - Full path taken
+- Enables timestep-by-timestep playback and visualization
 
 ---
 
@@ -168,23 +202,74 @@ TreeTraversal/
 
 ---
 
+## 🎬 How the Recorder Pattern Works
+
+### Step 1: Algorithm Execution
+When you press **B** (BFS) or **D** (DFS):
+1. Algorithm scans from selected node
+2. At each iteration, captures complete state:
+   ```go
+   step := TraversalStep{
+       Id: stepNumber,
+       State: BfsState{
+           CurrentNode: nodeBeingProcessed,
+           Visited: [...],
+           queue: [queue snapshot],
+           Unvisited: [...]
+       }
+   }
+   ```
+3. Returns `[]TraversalStep` array containing full algorithm history
+
+### Step 2: Visualization Playback
+- Game enters "Playback Mode" with step array loaded
+- Arrow keys navigate through recorded steps
+- Each frame applies the state from current step
+- Nodes are colored based on their role in that step's state
+
+### Step 3: State Categorization
+For each node, the game determines its color:
+```go
+if state.GetCurrent().Id == nodeId {
+    color = Coral Red        // Currently processing
+} else if isFrontier(nodeId) {
+    color = Neon Cyan        // In queue/stack (frontier)
+} else if isVisited(nodeId) {
+    color = Soft Purple      // Already explored
+} else {
+    color = Slate Gray       // Not yet discovered
+}
+```
+
+---
+
 ## 🔧 Implementation Details
 
 ### Game Loop (60 FPS)
 ```
 Update():
-  ├─ Physics simulation
-  │   ├─ Calculate forces (Coulomb, Hook, Gravity, Center)
-  │   ├─ Update velocities
-  │   ├─ Update positions
-  │   └─ Enforce boundaries
-  └─ Handle input (arrow keys for step navigation)
+  ├─ Handle Input (mouse, keyboard)
+  │   ├─ Mouse drag: reposition nodes
+  │   ├─ B/D keys: start algorithm playback
+  │   ├─ Arrow keys: navigate steps or adjust speed
+  │   └─ Edit mode: create/load trees
+  ├─ Update Physics (if not dragging)
+  │   ├─ Calculate Coulomb repulsion (all pairs)
+  │   ├─ Calculate Hook attraction (parent-child)
+  │   ├─ Apply gravity to center
+  │   ├─ Apply friction damping
+  │   └─ Update positions
+  └─ Update Algorithm Playback (if playing)
+      ├─ Increment step counter
+      ├─ When ready: advance to next step
 
 Draw():
-  ├─ Fill background
-  ├─ Categorize nodes by state
-  ├─ Draw edges (gray lines)
-  └─ Draw nodes with state colors
+  ├─ Fill background with dark color
+  ├─ Draw all edges (gray lines)
+  ├─ Categorize nodes by current state
+  ├─ Draw nodes as circles with state colors
+  ├─ Draw node IDs centered in circles
+  └─ Draw UI (mode, speed, step info)
 ```
 
 ### Physics Update Steps Each Frame
@@ -205,38 +290,84 @@ Draw():
 
 ## 🎯 Usage Examples
 
-### Adding More Nodes
+### Building the Tree Programmatically
 Edit `cmd/main.go`:
 ```go
+// Create a new tree (automatically has root node 0)
 tree := Tree.NewTree()
-tree.AddNodeFromRoot()      // Node 1 as child of root
-tree.AddNodeFromRoot()      // Node 2 as child of root
-tree.AddNode(1)             // Node 3 as child of node 1
-tree.AddNode(2)             // Node 4 as child of node 2
-tree.AddNode(3)             // Node 5 as child of node 3
-// ... etc
+
+// Add children to root
+tree.AddNodeFromRoot()      // Creates node 1 as child of root
+tree.AddNodeFromRoot()      // Creates node 2 as child of root
+
+// Add children to specific nodes
+tree.AddNode(1)             // Creates node 3 as child of node 1
+tree.AddNode(1)             // Creates node 4 as child of node 1
+tree.AddNode(2)             // Creates node 5 as child of node 2
+tree.AddNode(3)             // Creates node 6 as child of node 3
+tree.AddNode(3)             // Creates node 7 as child of node 3
+
+// The tree now has structure:
+//        0 (root)
+//       / \
+//      1   2
+//     / \ /
+//    3  4 5
+//   / \
+//  6   7
 ```
 
-### Switching to DFS
-Edit `cmd/main.go`, change:
+### Using the Recorded Steps in Code
 ```go
-bfsSteps, err := tree.TraversalBfsSteps()
-```
-To:
-```go
-dfsSteps, err := tree.TraversalDfsSteps()
-```
-
-### Creating Custom Physics
-Edit `src/Game/game.go` in `NewGame()`:
-```go
-g.Physics = PhysicsEngine{
-    CoulombConstant:     1000.0,   // More repulsion
-    HookConstant:        0.05,     // Weaker bonds
-    EquilibriumDistance: 150.0,    // More spacing
-    GravityForce:        50.0,     // Lighter gravity
-    Friction:            0.7,      // More bouncy
+// Get BFS steps starting from node 0
+bfsSteps, err := tree.TraversalBfsSteps(0)
+if err != nil {
+    log.Fatal(err)
 }
+
+// Iterate through recorded steps
+for i, step := range bfsSteps {
+    state := step.State.(BfsState)
+    fmt.Printf("Step %d: Processing node %d\n", i, state.GetCurrent().Id)
+    fmt.Printf("  - Visited: %v\n", state.GetVisited())
+    fmt.Printf("  - In Queue: %v\n", state.GetFrontier())
+    fmt.Printf("  - Path so far: %v\n", state.GetPathTaken())
+}
+```
+
+### Starting Algorithm from Different Nodes
+In the game:
+1. **Edit Mode**: Click on a node to select it (you'll see a white outline)
+2. Press **B** for BFS or **D** for DFS
+3. The algorithm will start from your selected node
+
+In code:
+```go
+// Start BFS from node 3 instead of root
+steps, err := tree.TraversalBfsSteps(3)
+
+// Start DFS from node 2
+steps, err := tree.TraversalDfsSteps(2)
+```
+
+### Generating Random Test Trees
+The app generates test trees automatically:
+```go
+// Random 150-node tree (press 1 in game)
+GenerarArbolAleatorio(150)
+
+// Deep 50-level chain tree (press 2 in game)
+GenerarArbolProfundo(50)
+```
+
+### Customizing Node Appearance
+Edit `src/Game/game.go` in the `Draw()` method to change colors:
+```go
+// Change current node color
+colorCurrent := color.RGBA{255, 0, 0, 255}      // Red
+colorFrontier := color.RGBA{0, 255, 255, 255}   // Cyan
+colorVisited := color.RGBA{128, 0, 255, 255}    // Purple
+colorUnseen := color.RGBA{128, 128, 128, 255}   // Gray
 ```
 
 ---
