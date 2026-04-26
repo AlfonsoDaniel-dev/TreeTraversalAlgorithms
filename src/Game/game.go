@@ -157,13 +157,22 @@ func (g *Game) handleMouse() {
 }
 
 func (g *Game) handleEditMode() {
+	// [N] NUEVO ARBOL: Borra todo y deja solo la raíz
+	if inpututil.IsKeyJustPressed(ebiten.KeyN) {
+		g.Tree = Tree.NewTree() // Crea un árbol fresco (solo nodo 0)
+		g.Nodes = make(map[int]*VisualNode)
+		g.Edges = make([]*VisualEdge, 0)
+		g.SelectedNodeID = 0
+		g.syncVisuals()
+	}
+
 	if inpututil.IsKeyJustPressed(ebiten.KeyC) {
 		if err := g.Tree.AddNode(g.SelectedNodeID); err == nil {
 			g.syncVisuals()
 		}
 	}
 
-	// ¡Aquí están de regreso tus árboles masivos!
+	// Carga de catálogo
 	if inpututil.IsKeyJustPressed(ebiten.Key1) {
 		g.LoadTreeFromCatalog(0)
 	}
@@ -180,14 +189,19 @@ func (g *Game) handleEditMode() {
 		g.LoadTreeFromCatalog(4)
 	}
 
+	// Ejecutar Algoritmos pasando el nodo seleccionado
 	if inpututil.IsKeyJustPressed(ebiten.KeyB) {
-		if steps, err := g.Tree.TraversalBfsSteps(); err == nil {
+		if steps, err := g.Tree.TraversalBfsSteps(g.SelectedNodeID); err == nil {
 			g.TraversalSteps, g.CurrentStep, g.IsPlaying, g.Mode = steps, 0, true, ModePlayback
+		} else {
+			fmt.Println("Error BFS:", err)
 		}
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyD) {
-		if steps, err := g.Tree.TraversalDfsSteps(); err == nil {
+		if steps, err := g.Tree.TraversalDfsSteps(g.SelectedNodeID); err == nil {
 			g.TraversalSteps, g.CurrentStep, g.IsPlaying, g.Mode = steps, 0, true, ModePlayback
+		} else {
+			fmt.Println("Error DFS:", err)
 		}
 	}
 }
@@ -330,31 +344,41 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 
 func (g *Game) drawUI(screen *ebiten.Image) {
-	// Panel Superior (Info de Modo)
-	vector.DrawFilledRect(screen, 0, 0, float32(g.ScreenWidth), 60, color.RGBA{18, 18, 24, 200}, true)
+	// Panel Superior (Hicimos el panel más alto: 70px)
+	vector.DrawFilledRect(screen, 0, 0, float32(g.ScreenWidth), 70, color.RGBA{18, 18, 24, 220}, true)
 
 	// Barra de velocidad (UI Visual)
 	speedPercent := 100 - (g.TicksPerFrame * 100 / 120)
-	vector.DrawFilledRect(screen, 10, 50, float32(g.ScreenWidth-20), 4, color.RGBA{45, 45, 58, 255}, true)
-	vector.DrawFilledRect(screen, 10, 50, float32((g.ScreenWidth-20)*speedPercent/100), 4, color.RGBA{78, 205, 196, 255}, true)
+	vector.DrawFilledRect(screen, 10, 60, float32(g.ScreenWidth-20), 4, color.RGBA{45, 45, 58, 255}, true)
+	vector.DrawFilledRect(screen, 10, 60, float32((g.ScreenWidth-20)*speedPercent/100), 4, color.RGBA{78, 205, 196, 255}, true)
 
 	if g.Mode == ModeEdit {
-		text.Draw(screen, "MODO EDICION", basicfont.Face7x13, 20, 30, color.RGBA{78, 205, 196, 255})
-		text.Draw(screen, fmt.Sprintf("Nodo Seleccionado: %d | [C] Nuevo Hijo | [1-5] Arboles", g.SelectedNodeID), basicfont.Face7x13, 140, 30, color.White)
-		text.Draw(screen, "[B] BFS  [D] DFS", basicfont.Face7x13, 600, 30, color.RGBA{255, 107, 107, 255})
-	} else {
-		text.Draw(screen, "REPRODUCCION", basicfont.Face7x13, 20, 30, color.RGBA{149, 117, 205, 255})
+		titulo := "=== MODO EDICION ==="
+		if len(g.CatalogNames) > 0 {
+			titulo = fmt.Sprintf("=== MODO EDICION | Arbol: %s ===", g.CatalogNames[g.CurrentTreeIndex])
+		}
+		text.Draw(screen, titulo, basicfont.Face7x13, 20, 25, color.RGBA{78, 205, 196, 255})
+
+		// Línea de edición
+		text.Draw(screen, fmt.Sprintf("Seleccionado: %d  |  [C] Agregar Hijo  |  [N] Nuevo Arbol  |  [1-5] Catalogo", g.SelectedNodeID), basicfont.Face7x13, 20, 45, color.White)
+
+		// Línea de algoritmos (Separada a la derecha)
+		text.Draw(screen, "LANZAR DESDE NODO SELECCIONADO:", basicfont.Face7x13, 650, 25, color.RGBA{84, 110, 122, 255})
+		text.Draw(screen, "[B] Ver BFS   |   [D] Ver DFS", basicfont.Face7x13, 650, 45, color.RGBA{255, 107, 107, 255})
+
+	} else if g.Mode == ModePlayback {
+		text.Draw(screen, "=== MODO REPRODUCCION ===", basicfont.Face7x13, 20, 25, color.RGBA{149, 117, 205, 255})
 		status := "Pausado"
 		if g.IsPlaying {
 			status = "Corriendo"
 		}
-		text.Draw(screen, fmt.Sprintf("Paso: %d/%d (%s)", g.CurrentStep, len(g.TraversalSteps)-1, status), basicfont.Face7x13, 140, 30, color.White)
-		text.Draw(screen, "[Espacio] Play/Pausa | [ESC] Salir", basicfont.Face7x13, 400, 30, color.White)
+		text.Draw(screen, fmt.Sprintf("Paso: %d/%d (%s)", g.CurrentStep, len(g.TraversalSteps)-1, status), basicfont.Face7x13, 20, 45, color.White)
+		text.Draw(screen, "[Espacio] Play/Pausa  |  [<-] [->] Paso manual  |  [ESC] Salir a Edicion", basicfont.Face7x13, 400, 45, color.RGBA{255, 200, 0, 255})
 	}
 
-	// Panel Lateral de Velocidad
-	text.Draw(screen, fmt.Sprintf("VELOCIDAD: %d%%", speedPercent), basicfont.Face7x13, g.ScreenWidth-150, 30, color.RGBA{78, 205, 196, 255})
-	text.Draw(screen, "Usa [ARRIBA/ABAJO]", basicfont.Face7x13, g.ScreenWidth-150, 45, color.RGBA{84, 110, 122, 255})
+	// Indicador de Velocidad (Esquina superior derecha)
+	text.Draw(screen, fmt.Sprintf("VELOCIDAD: %d%%", speedPercent), basicfont.Face7x13, g.ScreenWidth-150, 25, color.RGBA{78, 205, 196, 255})
+	text.Draw(screen, "Teclas [ARRIBA / ABAJO]", basicfont.Face7x13, g.ScreenWidth-185, 45, color.RGBA{84, 110, 122, 255})
 }
 
 func (g *Game) Layout(w, h int) (int, int) { return g.ScreenWidth, g.ScreenHeight }

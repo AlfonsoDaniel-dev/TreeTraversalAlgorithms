@@ -1,7 +1,7 @@
 package Tree
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/AlfonsoDaniel-dev/TreeTraversal/src/Node"
 )
@@ -18,16 +18,20 @@ func (s DfsState) GetVisited() []*Node.Node  { return s.Visited }
 func (s DfsState) GetFrontier() []*Node.Node { return s.stack }
 func (s DfsState) GetUnseen() []*Node.Node   { return s.Unvisited }
 
-func (t *Tree) TraversalDfsSteps() ([]TraversalStep, error) {
-	if t.Root == nil {
-		return nil, errors.New("no root in the tree")
+func (t *Tree) TraversalDfsSteps(startNodeId int) ([]TraversalStep, error) {
+	// 1. Buscamos el nodo de inicio
+	startNode, ok := t.Nodes[startNodeId]
+	if !ok {
+		return nil, fmt.Errorf("no se encontro nodo con ID: %d", startNodeId)
 	}
 
 	var history []TraversalStep
-	stack := []*Node.Node{t.Root}
+
+	// 2. Iniciamos la pila con el nodo seleccionado
+	stack := []*Node.Node{startNode}
 
 	discovered := make(map[int]bool)
-	discovered[t.Root.Id] = true
+	discovered[startNode.Id] = true
 
 	var visited []*Node.Node
 	stepId := 0
@@ -35,12 +39,18 @@ func (t *Tree) TraversalDfsSteps() ([]TraversalStep, error) {
 	for len(stack) > 0 {
 
 		n := len(stack) - 1
-
 		actual := stack[n]
 		stack = stack[:n]
 
-		children := actual.GetChildren()
+		// 1. Explorar hacia ARRIBA (Apilamos al padre) <-- LA NUEVA MAGIA
+		padre := actual.GetParent()
+		if padre != nil && !discovered[padre.Id] {
+			discovered[padre.Id] = true
+			stack = append(stack, padre)
+		}
 
+		// 2. Explorar hacia ABAJO (Apilamos a los hijos en reversa)
+		children := actual.GetChildren()
 		for i := len(children) - 1; i >= 0; i-- {
 			child := children[i]
 			if !discovered[child.Id] {

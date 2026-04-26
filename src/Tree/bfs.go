@@ -1,7 +1,7 @@
 package Tree
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/AlfonsoDaniel-dev/TreeTraversal/src/Node"
 )
@@ -28,20 +28,28 @@ func (s BfsState) GetFrontier() []*Node.Node {
 func (s BfsState) GetUnseen() []*Node.Node {
 	return s.Unvisited
 }
-func (t *Tree) TraversalBfsSteps() ([]TraversalStep, error) {
-	if t.Root == nil {
-		return nil, errors.New("root is nil")
+
+func (t *Tree) TraversalBfsSteps(startNodeId int) ([]TraversalStep, error) {
+	// 1. Buscamos el nodo de inicio en el mapa maestro
+	startNode, ok := t.Nodes[startNodeId]
+	if !ok {
+		return nil, fmt.Errorf("no se encontro nodo con ID: %d", startNodeId)
 	}
 
 	var history []TraversalStep
-	queue := []*Node.Node{t.Root}
+
+	// 2. Iniciamos la cola con el nodo seleccionado
+	queue := []*Node.Node{startNode}
+
 	discovered := make(map[int]bool)
-	discovered[t.Root.Id] = true
+	discovered[startNode.Id] = true
 
 	var visited []*Node.Node
 	stepId := 0
 
 	for len(queue) > 0 {
+		// ... dentro de tu for len(queue) > 0 ...
+
 		actual := queue[0]
 		queue = queue[1:]
 
@@ -50,6 +58,12 @@ func (t *Tree) TraversalBfsSteps() ([]TraversalStep, error) {
 				discovered[child.Id] = true
 				queue = append(queue, child)
 			}
+		}
+
+		padre := actual.GetParent()
+		if padre != nil && !discovered[padre.Id] {
+			discovered[padre.Id] = true
+			queue = append(queue, padre)
 		}
 
 		var undiscovered []*Node.Node
