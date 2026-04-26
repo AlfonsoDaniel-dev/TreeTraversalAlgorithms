@@ -1,0 +1,9 @@
+# --- JetBrains / GoLand ---
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Opcional: Si quieres compartir la configuración de ejecución o el estilo de código, 
+# puedes excluir la carpeta .idea pero permitir ciertos archivos. 
+# Sin embargo, lo más común y seguro es ignorarla por completo como arriba.
