@@ -459,7 +459,7 @@ func (g *Game) updatePhysics() {
 	const repulsion = 4000.0
 	const springLen = 80.0 // Resortes más cortos para jerarquía
 	const springK = 0.15   // Mayor tensión para cargar el peso
-	const gravityY = 0.8   // Gravedad de cascada (+Y hacia abajo)
+	const gravityY = 0.3   // Gravedad de cascada (+Y hacia abajo)
 	const friction = 0.80
 	const maxSpeed = 25.0
 
