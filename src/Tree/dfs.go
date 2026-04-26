@@ -34,7 +34,7 @@ func (t *Tree) TraversalDfsSteps() ([]TraversalStep, error) {
 
 	for len(stack) > 0 {
 
-		n := len(stack) - -1
+		n := len(stack) - 1
 
 		actual := stack[n]
 		stack = stack[:n]
